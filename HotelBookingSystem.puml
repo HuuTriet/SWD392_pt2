@@ -1,0 +1,215 @@
+@startuml HotelBookingSystem
+!define LIGHTBLUE #D5E8F0
+!define LIGHTGREEN #E8F5E9
+!define LIGHTYELLOW #FFF9C4
+!define LIGHTCORAL #FFE0E0
+
+' Configuration
+skinparam linetype ortho
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+' ================== CONTROLLER LAYER ==================
+package "Controller Layer" LIGHTBLUE {
+    class BookingController <<Controller>> {
+        - bookingService: IBookingService
+        - logger: Logger
+        - validator: RequestValidator
+        
+        + makeReservation(guestId: Long, roomIds: List<Long>, checkIn: Date, checkOut: Date): BookingResponse
+        + cancelReservation(bookingId: Long): ResponseStatus
+        + getBookingDetails(bookingId: Long): BookingDTO
+        + updateReservation(bookingId: Long, updateRequest: BookingUpdateRequest): BookingResponse
+    }
+}
+
+' ================== SERVICE LAYER ==================
+package "Service Layer" LIGHTGREEN {
+    interface IBookingService {
+        + checkAvailability(roomId: Long, checkIn: Date, checkOut: Date): Boolean
+        + calculateTotal(booking: Booking): BigDecimal
+        + applyDiscount(total: BigDecimal, discountCode: String): BigDecimal
+        + createBooking(guestId: Long, roomIds: List<Long>, checkIn: Date, checkOut: Date): Booking
+        + cancelBooking(bookingId: Long): Boolean
+    }
+    
+    class BookingService <<Service>> {
+        - bookingRepository: IBookingRepository
+        - roomRepository: IRoomRepository
+        - priceCalculator: PriceCalculator
+        - discountEngine: DiscountEngine
+        
+        + checkAvailability(roomId: Long, checkIn: Date, checkOut: Date): Boolean
+        + calculateTotal(booking: Booking): BigDecimal
+        + applyDiscount(total: BigDecimal, discountCode: String): BigDecimal
+        + createBooking(guestId: Long, roomIds: List<Long>, checkIn: Date, checkOut: Date): Booking
+        + cancelBooking(bookingId: Long): Boolean
+        - validateDates(checkIn: Date, checkOut: Date): void
+        - notifyGuest(guest: Guest, booking: Booking): void
+    }
+}
+
+' ================== REPOSITORY LAYER ==================
+package "Repository Layer" LIGHTYELLOW {
+    interface IBookingRepository {
+        + save(booking: Booking): Booking
+        + findById(id: Long): Optional<Booking>
+        + findByGuestId(guestId: Long): List<Booking>
+        + delete(bookingId: Long): void
+        + existsOverlappingBooking(roomId: Long, checkIn: Date, checkOut: Date): Boolean
+    }
+    
+    interface IRoomRepository {
+        + findById(id: Long): Optional<Room>
+        + findAvailableRooms(checkIn: Date, checkOut: Date): List<Room>
+        + findByHotelId(hotelId: Long): List<Room>
+    }
+}
+
+' ================== DOMAIN ENTITIES ==================
+package "Domain Entities" LIGHTCORAL {
+    class Hotel {
+        - hotelId: Long
+        - name: String
+        - address: String
+        - starRating: Integer
+        - phoneNumber: String
+        - email: String
+        - isActive: Boolean
+        
+        + addRoom(room: Room): void
+        + removeRoom(roomId: Long): void
+        + getAvailableRooms(): List<Room>
+        + deactivate(): void
+    }
+    
+    class Room {
+        - roomId: Long
+        - roomNumber: String
+        - floor: Integer
+        - isAvailable: Boolean
+        - maxOccupancy: Integer
+        - description: String
+        
+        + book(): void
+        + release(): void
+        + isAvailableForPeriod(checkIn: Date, checkOut: Date): Boolean
+    }
+    
+    class RoomType {
+        - roomTypeId: Long
+        - typeName: String
+        - basePrice: BigDecimal
+        - amenities: List<String>
+        - description: String
+        
+        + updatePrice(newPrice: BigDecimal): void
+        + addAmenity(amenity: String): void
+        + getPriceForNights(nights: Integer): BigDecimal
+    }
+    
+    class Guest {
+        - guestId: Long
+        - firstName: String
+        - lastName: String
+        - email: String
+        - phoneNumber: String
+        - loyaltyPoints: Integer
+        - registrationDate: Date
+        
+        + updateContactInfo(email: String, phone: String): void
+        + addLoyaltyPoints(points: Integer): void
+        + getFullName(): String
+    }
+    
+    class Booking {
+        - bookingId: Long
+        - checkInDate: Date
+        - checkOutDate: Date
+        - totalAmount: BigDecimal
+        - status: BookingStatus
+        - createdAt: Timestamp
+        - updatedAt: Timestamp
+        
+        + confirm(): void
+        + cancel(): void
+        + calculateDuration(): Integer
+        + isActive(): Boolean
+        + addRoom(room: Room): void
+    }
+    
+    enum BookingStatus {
+        PENDING
+        CONFIRMED
+        CANCELLED
+        COMPLETED
+        NO_SHOW
+    }
+}
+
+' ================== RELATIONSHIPS ==================
+
+' Controller -> Service (Dependency)
+BookingController ..> IBookingService : <<uses>>
+
+' Service Implementation
+BookingService ..|> IBookingService : <<implements>>
+
+' Service -> Repository (Dependency)
+BookingService ..> IBookingRepository : <<uses>>
+BookingService ..> IRoomRepository : <<uses>>
+
+' Service -> Domain (Dependency for calculation)
+BookingService ..> Booking : <<uses>>
+BookingService ..> Room : <<uses>>
+
+' Composition: Hotel *-- Room (When Hotel is deleted, Rooms are deleted)
+Hotel "1" *-- "0..*" Room : manages >
+
+' Association: Room --> RoomType (Many rooms can have same type)
+Room "0..*" --> "1" RoomType : has type >
+
+' Association: Guest --> Booking (One guest can have many bookings)
+Guest "1" -- "0..*" Booking : makes >
+
+' Association: Booking --> Room (One booking can include many rooms, one room can be in many bookings over time)
+Booking "0..*" -- "1..*" Room : includes >
+
+' Enum relationship
+Booking --> BookingStatus : has status >
+
+' Repository manages entities
+IBookingRepository ..> Booking : <<manages>>
+IRoomRepository ..> Room : <<manages>>
+
+' Notes
+note right of Hotel
+  When Hotel is deactivated or deleted,
+  all its Rooms are also removed from
+  the system (Composition relationship)
+end note
+
+note right of BookingService
+  Implements business logic:
+  - Checks room availability
+  - Calculates total with room prices
+  - Applies discount codes
+  - Validates booking dates
+end note
+
+note left of IBookingService
+  Interface allows flexibility:
+  - Easy to mock for testing
+  - Can swap implementations
+  - Follows Dependency Inversion
+end note
+
+note bottom of Booking
+  A Booking can include multiple Rooms
+  for the same date range.
+  Multiplicity: 1..* (at least one room)
+end note
+
+@enduml
