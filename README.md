@@ -211,10 +211,10 @@ node generate-doc.js
 
 ## 👤 Tác giả
 
-- **MSSV**: [Điền MSSV]
-- **Họ tên**: [Điền họ tên]
-- **Lớp**: [Điền lớp]
-- **Email**: [Email]
+- **MSSV**: DE180336
+- **Họ tên**: Nguyễn Hữu Triết
+- **Lớp**: SE18D05
+- **Email**: nhuutriet04@gmail.com
 
 ## 📝 License
 
